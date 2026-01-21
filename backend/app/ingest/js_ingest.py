@@ -75,6 +75,48 @@ def extract_function(node, code):
     walk(node)
     return function_chunk
 
+def mutates_state(node, code):
+    mutated = set()
+
+    def walk(n):
+        if n.type == "assignment_expression":
+            left = n.child_by_field_name("left")
+            if left and left.type == "member_expression":
+                if "this." in node_text(code, left):
+                    mutated.add(node_text(code, left))
+        for c in n.children:
+            walk(c)
+    walk(node)
+    return mutated
+
+def extract_methode(class_node, code):
+    methods = []
+
+    for child in class_node.children:
+        if child.type == "class_body":
+            for member in child.children:
+                if member.type == "method_definition":
+                    name_node = member.child_by_field_name("name")
+                    name = node_text(code, name_node)
+
+                    params_node = member.child_by_field_name("parameters")
+                    params = []
+                    if params_node:
+                        for p in params_node.children:
+                            if p.type == "identifier":
+                                params.append(node_text(code, p))
+
+                    methods.append({
+                        "name": name,
+                        "params": params,
+                        "calls": extract_call(member, code),
+                        "mutatesState": bool(mutates_state(member)),
+                        "mutations": mutates_state(member),
+                        "code": node_text(code, member)
+                    })
+    
+    return methods
+
 
 def extract_classes(node, code):
     class_chunk = []
@@ -85,6 +127,7 @@ def extract_classes(node, code):
         if n.type == "class_declaration":
             name_node = node.child_by_field_name("name")
             class_name = node_text(n, name_node)
+            methods = extract_methode(n, code)
 
             class_chunk.append({
                 "type": "class",
@@ -93,7 +136,7 @@ def extract_classes(node, code):
                 "language": "javascript",
                 "import": imports,
                 "constructor": "constructor",
-                "methode": "methode",
+                "methode": methods,
                 "code": node_text(node, code)
             })
     
@@ -101,3 +144,4 @@ def extract_classes(node, code):
             walk(c)
     walk(node)
     return class_chunk
+    
